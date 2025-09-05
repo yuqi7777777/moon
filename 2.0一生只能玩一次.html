@@ -1,0 +1,113 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Moon Trigger Demo</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    video {
+      transform: scaleX(-1);
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+    }
+    .red-dot {
+      position: fixed;
+      width: 10px;
+      height: 10px;
+      background-color: red;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .moon {
+      position: fixed;
+      color: white;
+      font-size: 20px;
+      background: rgba(255,255,255,0.1);
+      padding: 10px;
+      border: 1px solid white;
+      border-radius: 10px;
+      animation: moonAnimation 3s ease-out forwards;
+    }
+    @keyframes moonAnimation {
+      0% { opacity: 1; transform: scale(1) translateY(0); }
+      100% { opacity: 0; transform: scale(1.3) translateY(-30px); }
+    }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay muted playsinline></video>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.min.js"></script>
+  <script>
+    const videoElement = document.getElementById('video');
+    let lastPopupTime = 0;
+    let isEyeClosed = false;
+
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8});
+    hands.onResults(onHandResults);
+
+    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+    faceMesh.setOptions({maxNumFaces: 1, minDetectionConfidence: 0.8, minTrackingConfidence: 0.8});
+    faceMesh.onResults(onFaceResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+        await faceMesh.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+    camera.start();
+
+    function onFaceResults(results) {
+      if (results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+        const left = landmarks[159].y - landmarks[145].y;
+        const right = landmarks[386].y - landmarks[374].y;
+        isEyeClosed = left < 0.015 && right < 0.015;
+      }
+    }
+
+    function onHandResults(results) {
+      if (results.multiHandLandmarks && isEyeClosed) {
+        const now = Date.now();
+        if (now - lastPopupTime < 3000) return;
+        const hand = results.multiHandLandmarks[0];
+        const indexTip = hand[8];
+        const x = indexTip.x * window.innerWidth;
+        const y = indexTip.y * window.innerHeight;
+        showMoonEffect(x, y);
+        lastPopupTime = now;
+      }
+    }
+
+    function showMoonEffect(x, y) {
+      const positions = [
+        [0, 0], [-50, 0], [50, 0], [0, -50], [0, 50],
+        [-40, -40], [40, -40], [-40, 40], [40, 40]
+      ];
+      positions.forEach(([dx, dy], i) => {
+        if (i === 0) return;
+        const moon = document.createElement('div');
+        moon.className = 'moon';
+        moon.textContent = 'moon';
+        moon.style.left = `${x + dx}px`;
+        moon.style.top = `${y + dy}px`;
+        document.body.appendChild(moon);
+        setTimeout(() => moon.remove(), 3000);
+      });
+    }
+  </script>
+</body>
+</html>

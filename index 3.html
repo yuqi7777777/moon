@@ -1,0 +1,146 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Moon Popup</title>
+  <style>
+    body, html {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+    video {
+      transform: scaleX(-1); /* 镜像摄像头 */
+      display: none;
+    }
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 1;
+    }
+    .moon {
+      position: absolute;
+      color: white;
+      font-size: 24px;
+      animation: pulse 2s ease-out forwards;
+    }
+    @keyframes pulse {
+      0% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(1.8) translateY(-20px);
+      }
+    }
+  </style>
+</head>
+<body>
+<video id="video" autoplay></video>
+<canvas id="canvas"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.min.js"></script>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// 检测是否闭眼（通过 face mesh 的眼部关键点）
+let eyesClosed = false;
+
+const faceMesh = new FaceMesh({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+});
+faceMesh.setOptions({
+  maxNumFaces: 1,
+  refineLandmarks: true,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5,
+});
+faceMesh.onResults(onFaceResults);
+
+function onFaceResults(results) {
+  if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    const face = results.multiFaceLandmarks[0];
+    const leftEyeOpen = distance(face[159], face[145]) > 0.015;
+    const rightEyeOpen = distance(face[386], face[374]) > 0.015;
+    eyesClosed = !leftEyeOpen && !rightEyeOpen;
+  }
+}
+
+function distance(p1, p2) {
+  return Math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2);
+}
+
+const hands = new Hands({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+});
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.7
+});
+hands.onResults(onHandResults);
+
+function onHandResults(results) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+  const hand = results.multiHandLandmarks[0];
+  const finger = hand[8];
+  const x = canvas.width * (1 - finger.x);  // 镜像反转 x 轴
+  const y = canvas.height * finger.y;
+
+  // 画红点
+  ctx.beginPath();
+  ctx.arc(x, y, 10, 0, Math.PI * 2);
+  ctx.fillStyle = "red";
+  ctx.fill();
+
+  if (eyesClosed) {
+    spawnMoons(x, y);
+  }
+}
+
+function spawnMoons(x, y) {
+  const offsets = [
+    [0, -60], [60, 0], [0, 60], [-60, 0],
+    [-40, -40], [40, -40], [-40, 40], [40, 40]
+  ];
+
+  offsets.forEach(([dx, dy]) => {
+    const moon = document.createElement('div');
+    moon.className = 'moon';
+    moon.style.left = (x + dx) + 'px';
+    moon.style.top = (y + dy) + 'px';
+    moon.textContent = 'moon';
+    document.body.appendChild(moon);
+    setTimeout(() => {
+      moon.remove();
+    }, 2500);
+  });
+}
+
+// 摄像头初始化
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await faceMesh.send({image: video});
+    await hands.send({image: video});
+  },
+  width: 640,
+  height: 480
+});
+camera.start();
+</script>
+</body>
+</html>
